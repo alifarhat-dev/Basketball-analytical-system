@@ -62,7 +62,7 @@ BEGIN
             ts.season IS NOT NULL AS is_active,
             COALESCE(ts.season, ls.current_season + 1) AS current_season,
             CASE 
-                WHEN ts.season IS NOT NULL THEN ls.total_seasons + 1 
+                WHEN ts.season IS NOT NULL THEN COALESCE(ls.total_seasons,0) + 1 
                 ELSE ls.total_seasons
             END AS total_seasons
         FROM last_season ls
@@ -71,3 +71,4 @@ BEGIN
 
     END LOOP;
 END $$;
+
