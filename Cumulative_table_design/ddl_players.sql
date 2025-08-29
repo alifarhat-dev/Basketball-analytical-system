@@ -40,7 +40,8 @@ CREATE TABLE players (
     scoring_class scoring_class,       -- Scoring classification
     years_since_last_active INTEGER,   -- Years since player last played
     is_active BOOLEAN,                 -- Currently active
-    current_season INTEGER,            -- Season year (part of PK)
+    current_season INTEGER,   -- Season year (part of PK)
+	total_seasons INTEGER, --total seasons in each player career
     PRIMARY KEY (player_name, current_season)
 );
 
