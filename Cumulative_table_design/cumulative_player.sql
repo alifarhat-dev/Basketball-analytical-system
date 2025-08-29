@@ -1,90 +1,73 @@
 /*
 ===============================================================================
-DML Script: Insert Player Data into 'players' Table
+PL/pgSQL Script: Update Players Table Year by Year
 ===============================================================================
 Script Purpose:
-    This script inserts aggregated player-season data into the 'players' table.
-    It computes per-season statistics arrays, scoring classification, active status,
-    and years since last active for each player.
+    Loop over seasons from 1998 to 2022 and update the 'players' table with 
+    stats from 'player_seasons'. If the player already exists, append the 
+    new season stats and update scoring classification. If the player is new, 
+    insert a new row.
 ===============================================================================
 */
+DO $$
+DECLARE
+    yr INT;  -- Loop variable for NBA seasons
+BEGIN
+    -- Loop through each season from 1997 to 2022
+    FOR yr IN 1997..2022 LOOP
 
--- Insert data into players table
-INSERT INTO players
-WITH years AS (
-    -- Generate all NBA seasons from 1996 to 2022
-    SELECT *
-    FROM GENERATE_SERIES(1996, 2022) AS season
-), p AS (
-    -- Determine the first season of each player
-    SELECT
-        player_name,
-        MIN(season) AS first_season
-    FROM player_seasons
-    GROUP BY player_name
-), players_and_seasons AS (
-    -- Generate one row per player per season from their first season onward
-    SELECT *
-    FROM p
-    JOIN years y
-        ON p.first_season <= y.season
-), windowed AS (
-    -- Aggregate season stats into an array of season_stats
-    SELECT
-        pas.player_name,
-        pas.season,
-        ARRAY_REMOVE(
-            ARRAY_AGG(
-                CASE
-                    WHEN ps.season IS NOT NULL THEN
-                        ROW(
-                            ps.season,
-                            ps.pts,
-                            ps.ast,
-                            ps.reb,
-                            ps.weight
-                        )::season_stats
-                END
-            ) OVER (PARTITION BY pas.player_name ORDER BY COALESCE(pas.season, ps.season)),
-            NULL
-        ) AS seasons
-    FROM players_and_seasons pas
-    LEFT JOIN player_seasons ps
-        ON pas.player_name = ps.player_name
-        AND pas.season = ps.season
-    ORDER BY pas.player_name, pas.season
-), static AS (
-    -- Pull static player information (height, college, draft info, etc.)
-    SELECT
-        player_name,
-        MAX(height) AS height,
-        MAX(college) AS college,
-        MAX(country) AS country,
-        MAX(draft_year) AS draft_year,
-        MAX(draft_round) AS draft_round,
-        MAX(draft_number) AS draft_number
-    FROM player_seasons
-    GROUP BY player_name
-)
--- Final select: combine aggregated stats with static info
-SELECT
-    w.player_name,
-    s.height,
-    s.college,
-    s.country,
-    s.draft_year,
-    s.draft_round,
-    s.draft_number,
-    seasons AS season_stats,
-    CASE
-        WHEN (seasons[CARDINALITY(seasons)]::season_stats).pts > 20 THEN 'star'
-        WHEN (seasons[CARDINALITY(seasons)]::season_stats).pts > 15 THEN 'good'
-        WHEN (seasons[CARDINALITY(seasons)]::season_stats).pts > 10 THEN 'average'
-        ELSE 'bad'
-    END::scoring_class AS scoring_class,
-    w.season - (seasons[CARDINALITY(seasons)]::season_stats).season AS years_since_last_active,
-    (seasons[CARDINALITY(seasons)]::season_stats).season = w.season AS is_active,
-    w.season
-FROM windowed w
-JOIN static s
-    ON w.player_name = s.player_name;
+        -- Create CTE for players from last season
+        WITH last_season AS (
+            SELECT * 
+            FROM players
+            WHERE current_season = yr - 1
+        ),
+        -- Create CTE for players from the current season
+        this_season AS (
+            SELECT * 
+            FROM player_seasons
+            WHERE season = yr
+        )
+        -- Insert or update players for the current year
+        INSERT INTO players
+        SELECT
+            COALESCE(ls.player_name, ts.player_name) AS player_name,
+            COALESCE(ls.height, ts.height) AS height,
+            COALESCE(ls.college, ts.college) AS college,
+            COALESCE(ls.country, ts.country) AS country,
+            COALESCE(ls.draft_year, ts.draft_year) AS draft_year,
+            COALESCE(ls.draft_round, ts.draft_round) AS draft_round,
+            COALESCE(ls.draft_number, ts.draft_number) AS draft_number,
+            COALESCE(ls.seasons, ARRAY[]::season_stats[]) || 
+            CASE 
+                WHEN ts.season IS NOT NULL THEN
+                    ARRAY[ROW(ts.season, ts.pts, ts.ast, ts.reb, ts.weight)::season_stats]
+                ELSE
+                    ARRAY[]::season_stats[]
+            END AS seasons,
+            CASE
+                WHEN ts.season IS NOT NULL THEN
+                    (CASE 
+                        WHEN ts.pts > 20 THEN 'star'
+                        WHEN ts.pts > 15 THEN 'good'
+                        WHEN ts.pts > 10 THEN 'average'
+                        ELSE 'bad'
+                     END)::scoring_class
+                ELSE ls.scoring_class
+            END AS scoring_class,
+			CASE
+				WHEN ts.season IS NOT NULL THEN 0
+				ELSE ls.years_since_last_active + 1
+			END AS years_since_last_active,
+            ts.season IS NOT NULL AS is_active,
+            COALESCE(ts.season, ls.current_season + 1) AS current_season,
+            CASE 
+                WHEN ts.season IS NOT NULL THEN ls.total_seasons + 1 
+                ELSE ls.total_seasons
+            END AS total_seasons
+        FROM last_season ls
+        FULL OUTER JOIN this_season ts
+        ON ls.player_name = ts.player_name;
+
+    END LOOP;
+END $$;
