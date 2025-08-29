@@ -3,7 +3,7 @@
 PL/pgSQL Script: Update Players Table Year by Year
 ===============================================================================
 Script Purpose:
-    Loop over seasons from 1998 to 2022 and update the 'players' table with 
+    Loop over seasons from 1997 to 2022 and update the 'players' table with 
     stats from 'player_seasons'. If the player already exists, append the 
     new season stats and update scoring classification. If the player is new, 
     insert a new row.
