@@ -15,6 +15,3 @@ This document explains the structure of the `README.md` for the **Basketball Ana
 - **Why**: Ensures analytics remain accurate over time.  
 
 ---
-- **Why**: Encourages collaboration and improvements.  
-
-----
